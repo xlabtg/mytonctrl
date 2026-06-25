@@ -6,7 +6,7 @@ from typing import Optional
 
 from modules.module import MtcModule
 from mytonctrl.console_cmd import add_command, check_usage_args_min_max_len
-from mypylib.mypylib import color_print, ip2int, run_as_root, parse
+from mypylib.mypylib import color_print, ip2int, run_as_root, parse, create_secret_dir
 from mytoncore.utils import get_package_resource_path
 from mytonctrl.utils import get_current_user, pop_user_from_args
 from mytoninstaller.config import get_own_ip
@@ -25,7 +25,11 @@ class BackupModule(MtcModule):
             raise Exception("Could not get config from validator-console")
         dir_name = self.ton.tempDir + f'/ton_backup_{int(time.time() * 1000)}'
         dir_name_db = dir_name + '/db'
-        os.makedirs(dir_name_db)
+        # `exportallprivatekeys` writes the validator private keys here; the
+        # staging directory lives under world-traversable /tmp, so make it
+        # owner-only before any secret is written into it.
+        create_secret_dir(dir_name)
+        os.makedirs(dir_name_db, exist_ok=True)
         with open(dir_name_db + '/config.json', 'w') as f:
             f.write(text)
         self.create_keyring(dir_name_db)

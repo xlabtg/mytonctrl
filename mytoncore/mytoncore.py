@@ -32,7 +32,8 @@ from mypylib.mypylib import (
 	parse,
 	get_timestamp,
 	dec2hex,
-	Dict, int2ip, MyPyClass
+	Dict, int2ip, MyPyClass,
+	create_secret_dir,
 )
 from mytoncore.vm_stack import parse_result_stack
 
@@ -47,9 +48,11 @@ class MyTonCore:
 		self.poolsDir = self.local.my_work_dir + "pools/"
 		self.tempDir = self.local.my_temp_dir
 
-		os.makedirs(self.walletsDir, exist_ok=True)
-		os.makedirs(self.contractsDir, exist_ok=True)
-		os.makedirs(self.poolsDir, exist_ok=True)
+		# These directories hold wallet/pool/contract private keys (.pk files);
+		# create them owner-only so other local users cannot read the secrets.
+		create_secret_dir(self.walletsDir)
+		create_secret_dir(self.contractsDir)
+		create_secret_dir(self.poolsDir)
 
 		self._lite_client: LiteClient | None = None
 		self._validator_console: ValidatorConsole | None = None
@@ -1337,7 +1340,9 @@ class MyTonCore:
 		backups_dir = self.tempDir + "/auto_backups"
 		if self.local.db.get("auto_backup_path"):
 			backups_dir = self.local.db.get("auto_backup_path")
-		os.makedirs(backups_dir, exist_ok=True)
+		# Auto-backups bundle validator and wallet private keys; keep the
+		# destination directory owner-only (the archives themselves are 0o600).
+		create_secret_dir(backups_dir)
 		args.append(backups_dir + name)
 		self.clear_dir(backups_dir)
 		exit_code = module.create_backup(args)
