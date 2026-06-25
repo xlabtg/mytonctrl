@@ -25,6 +25,13 @@ WARNING = "warning"
 ERROR = "error"
 DEBUG = "debug"
 
+# Permissions for files/directories that may hold secrets (private keys,
+# wallet keys, credentials, the config DB with the alert-bot token, backups).
+# The default root umask (022) would otherwise create them world-readable
+# (files 0o644, dirs 0o755), exposing secrets to every local user.
+SECRET_FILE_MODE = 0o600
+SECRET_DIR_MODE = 0o700
+
 Callback = Callable[..., Any]
 
 
@@ -415,12 +422,19 @@ class MyPyClass:
 		with self.lock_file(db_path):
 			self._write_file_atomic(db_path, text)
 
-	def _write_file_atomic(self, path: str, text: str = "") -> None:
+	def _write_file_atomic(self, path: str, text: str = "", mode: int = SECRET_FILE_MODE) -> None:
 		tmp_path = f"{path}.tmp.{os.getpid()}.{threading.get_ident()}"
 		try:
-			with open(tmp_path, 'wt') as file:
+			# Create the temp file with restrictive perms from the start so the
+			# db (which stores the alert-bot token and other config) is never
+			# briefly world-readable, even under the default root umask (022).
+			fd = os.open(tmp_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, mode)
+			with os.fdopen(fd, 'wt') as file:
 				file.write(text)
 				file.flush()
+			# O_CREAT does not change the mode of a pre-existing temp file, so
+			# enforce it explicitly before the atomic replace.
+			os.chmod(tmp_path, mode)
 			os.replace(tmp_path, path)
 		finally:
 			if os.path.isfile(tmp_path):
@@ -432,7 +446,7 @@ class MyPyClass:
 	@contextmanager
 	def lock_file(self, path: str, timeout: float = 3.0):
 		lock_path = path + ".lock"
-		fd = os.open(lock_path, os.O_CREAT | os.O_RDWR, 0o644)
+		fd = os.open(lock_path, os.O_CREAT | os.O_RDWR, SECRET_FILE_MODE)
 		try:
 			deadline = time.monotonic() + timeout
 			while True:
@@ -603,6 +617,33 @@ class MyPyClass:
 			if ritem is not None:
 				text = text.replace(item, ritem)
 		return text
+
+
+def set_secret_file_perms(path: str, mode: int = SECRET_FILE_MODE) -> None:
+	"""Restrict a secret file to its owner only (best-effort chmod).
+
+	Used for private keys, wallet `.pk` files, the config DB and backup
+	archives. Errors are swallowed so that functionality is preserved on
+	filesystems that do not support `chmod` (e.g. some network/FAT mounts).
+	"""
+	try:
+		os.chmod(path, mode)
+	except OSError:
+		pass
+
+
+def create_secret_dir(path: str, mode: int = SECRET_DIR_MODE) -> None:
+	"""Create (if needed) a directory that holds secrets with owner-only perms.
+
+	`os.makedirs(..., mode=0o700)` is still subject to the process umask, so an
+	explicit `chmod` is applied afterwards to guarantee the directory is not
+	group/world accessible regardless of the inherited umask. The mode is
+	enforced even on a pre-existing directory because these locations stage
+	private key material and must never be traversable by other local users.
+	"""
+	os.makedirs(path, mode=mode, exist_ok=True)
+	set_secret_file_perms(path, mode)
+
 
 def parse(text: str | None, search: str | None, search2: str | None = None) -> str | None:
 	if search is None or text is None:
