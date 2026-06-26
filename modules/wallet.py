@@ -4,7 +4,7 @@ import base64
 import os
 
 from modules.module import MtcModule
-from mypylib.mypylib import color_print, print_table, parse
+from mypylib.mypylib import color_print, print_table, parse, set_secret_file_perms
 from mytoncore.models import Wallet
 from mytonctrl.console_cmd import (check_usage_no_args, check_usage_one_arg, check_usage_two_args,
     add_command, check_usage_args_len, check_usage_args_min_len, check_usage_args_lens
@@ -126,6 +126,8 @@ class WalletModule(MtcModule):
             file.write(addr_bytes)
         with open(wallet_path + ".pk", 'wb') as file:
             file.write(pk_bytes)
+        # The .pk file is the wallet private key; restrict it to the owner.
+        set_secret_file_perms(wallet_path + ".pk")
         return wallet_name
 
     def import_wallet(self, args):
@@ -205,6 +207,10 @@ class WalletModule(MtcModule):
             result = self.ton.fift.run(fift_args)
             if "Creating new" not in result:
                 raise Exception(f"CreateWallet error: {result}")
+            # new-wallet*.fif writes the private key as `<wallet_path>.pk`
+            # inheriting the process umask (world-readable under root); lock it
+            # down to the owner only.
+            set_secret_file_perms(wallet_path + ".pk")
         wallet = self.ton.GetLocalWallet(name, version)
         self.ton.SetWalletVersion(wallet.addrB64, version)
         return wallet
