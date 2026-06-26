@@ -245,8 +245,8 @@ def create_secret_dir(path, mode=SECRET_DIR_MODE): ...       # makedirs + при
 - **RCE / command injection.** Все вызовы внешних программ (`mytoncore/clients.py`, `run_as_root`,
   `BackupModule.run_*`) используют list-форму `subprocess` (`shell=False`) — инъекция через shell
   невозможна. Единственный `shell=True` (`mytoncore/telemetry.py:198`) — это захардкоженная строка
-  `df -h /var/ton-work/ | sed … | awk …` без пользовательского ввода. Вызовы `os.system` используют
-  либо константы (`mypyconsole.py: "clear"`), либо внутренние **константные** имена сервисов
+  `df -h /var/ton-work/ | sed … | awk …` без пользовательского ввода. Оставшиеся вызовы
+  `os.system` используют внутренние **константные** имена сервисов
   (`get_service_status("mytoncore"/"validator"/"btc_teleport")`), не управляемые атакующим.
 - **Insecure deserialization.** В коде нет `pickle`/`marshal`/`yaml.load` — используется только
   `json.load`/`json.loads`.
